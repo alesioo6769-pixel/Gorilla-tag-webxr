@@ -10,6 +10,7 @@
   #hud strong{font-size:17px} #status{font-size:12px;opacity:.85;margin-top:3px}
   #help{font-size:12px;opacity:.85;margin-top:5px}
   #name{width:112px;background:#ffffff18;color:white;border:1px solid #ffffff55;border-radius:7px;padding:6px}
+  canvas{touch-action:none;display:block}
   #mobile{display:none;position:fixed;z-index:6;bottom:24px;left:20px;width:130px;height:130px;border-radius:50%;background:#ffffff22;border:2px solid #ffffff66;touch-action:none}
   #stick{position:absolute;left:40px;top:40px;width:50px;height:50px;border-radius:50%;background:#ffffff99}
   #jump{display:none;position:fixed;z-index:6;right:24px;bottom:40px;width:92px;height:92px;border-radius:50%;border:2px solid white;background:#245f38cc;color:white;font-weight:bold}
@@ -22,7 +23,7 @@
   <strong>🦍 Gorilla Forest VR</strong><br>
   <span id="status">Conectando al servidor…</span><br>
   <input id="name" maxlength="18" value="Gorilla" aria-label="Nombre de jugador">
-  <div id="help">PC: WASD + ratón · Tablet: joystick + botón SALTAR · Quest: pulsa ENTER VR</div>
+  <div id="help">Móvil: joystick para caminar, arrastra la pantalla para mirar y pulsa SALTAR · Quest: pulsa ENTER VR</div>
 </div>
 <div id="mobile"><div id="stick"></div></div>
 <button id="jump">SALTAR</button>
@@ -103,7 +104,24 @@ function makeGorilla(color=0x8c6247){
   }
   return group;
 }
-const localAvatar=makeGorilla(); scene.add(localAvatar); localAvatar.visible=false;
+// Cuerpo visible en primera persona, unido a la cámara para seguir la mirada.
+const firstPersonBody = new THREE.Group();
+const bodyShell = new THREE.Mesh(new THREE.SphereGeometry(.34,16,12),localMat);
+bodyShell.scale.set(1,1.22,.72);
+bodyShell.position.set(0,-.72,-.34);
+firstPersonBody.add(bodyShell);
+const firstPersonArms = new THREE.Group();
+for(const side of [-1,1]){
+  const arm = new THREE.Mesh(new THREE.CapsuleGeometry(.105,.43,5,10),localMat);
+  arm.position.set(side*.39,-.43,-.38);
+  arm.rotation.z=side*-.72;
+  firstPersonArms.add(arm);
+  const hand = new THREE.Mesh(new THREE.SphereGeometry(.145,12,10),handMat);
+  hand.position.set(side*.61,-.67,-.5);
+  firstPersonArms.add(hand);
+}
+firstPersonBody.add(firstPersonArms);
+camera.add(firstPersonBody);
 const remotes=new Map();
 const socketUrl=(location.protocol==="https:"?"wss://":"ws://")+location.host;
 let ws;
@@ -139,13 +157,25 @@ function sendPosition(now){
   }
 }
 
-const keys={};
-addEventListener("keydown",e=>keys[e.code]=true);
-addEventListener("keyup",e=>keys[e.code]=false);
-let yaw=0,pitch=0,locked=false;
-renderer.domElement.addEventListener("click",()=>{if(!renderer.xr.isPresenting)renderer.domElement.requestPointerLock?.();});
-document.addEventListener("pointerlockchange",()=>locked=document.pointerLockElement===renderer.domElement);
-document.addEventListener("mousemove",e=>{if(locked){yaw-=e.movementX*.002;pitch=Math.max(-1.1,Math.min(1.1,pitch-e.movementY*.002));}});
+// En móvil, desliza sobre el mundo para girar la cámara.
+let yaw=0,pitch=0,lookPointer=null,lastLookX=0,lastLookY=0;
+renderer.domElement.addEventListener("pointerdown",e=>{
+  if(e.pointerType!=="touch" || renderer.xr.isPresenting)return;
+  lookPointer=e.pointerId;lastLookX=e.clientX;lastLookY=e.clientY;
+  try{renderer.domElement.setPointerCapture(e.pointerId);}catch(_){}
+});
+renderer.domElement.addEventListener("pointermove",e=>{
+  if(e.pointerId!==lookPointer)return;
+  const dx=e.clientX-lastLookX,dy=e.clientY-lastLookY;
+  lastLookX=e.clientX;lastLookY=e.clientY;
+  yaw-=dx*.004;
+  pitch=Math.max(-1.05,Math.min(1.05,pitch-dy*.004));
+  e.preventDefault();
+});
+function stopLook(e){if(e.pointerId===lookPointer)lookPointer=null;}
+renderer.domElement.addEventListener("pointerup",stopLook);
+renderer.domElement.addEventListener("pointercancel",stopLook);
+renderer.domElement.addEventListener("lostpointercapture",stopLook);
 let joy={x:0,y:0},jump=false,activePadPointer=null;
 const pad=document.querySelector("#mobile"),stick=document.querySelector("#stick");
 function padMove(e){
@@ -195,19 +225,16 @@ function animate(now){
     const forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
     const right=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
     const move=new THREE.Vector3();
-    if(keys.KeyW)move.add(forward);if(keys.KeyS)move.sub(forward);
-    if(keys.KeyD)move.add(right);if(keys.KeyA)move.sub(right);
     // Touch joystick axes are camera-relative; up on screen means forward.
     move.addScaledVector(right,joy.x);
     move.addScaledVector(forward,-joy.y);
     if(move.lengthSq()>0)move.normalize().multiplyScalar(5.2);
     velocity.x=move.x;velocity.z=move.z;
-    if((keys.Space||jump)&&camera.position.y<=1.57)velocity.y=4.4;
+    if(jump&&camera.position.y<=1.57)velocity.y=4.4;
     velocity.y-=9.8*dt;
     camera.position.addScaledVector(velocity,dt);
     if(camera.position.y<1.55){camera.position.y=1.55;velocity.y=0;}
-    localAvatar.position.set(camera.position.x,camera.position.y-1.55,camera.position.z);
-    localAvatar.rotation.y=yaw;
+    firstPersonArms.visible=true;
   }else{
     // Basic controller-swing locomotion prototype: controller pulls add movement.
     for(let i=0;i<controllers.length;i++){
@@ -224,8 +251,8 @@ function animate(now){
     velocity.y-=9.8*dt;
     camera.position.addScaledVector(velocity,dt);
     if(camera.position.y<1.55){camera.position.y=1.55;velocity.y=0;}
-    // Keep the avatar centered beneath the headset in VR.
-    localAvatar.position.set(camera.position.x,camera.position.y-1.55,camera.position.z);
+    // En VR, el torso sigue la cabeza y las manos reales siguen los mandos.
+    firstPersonArms.visible=false;
   }
   sendPosition(now);
   renderer.render(scene,camera);
