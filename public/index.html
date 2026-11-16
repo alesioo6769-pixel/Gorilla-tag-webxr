@@ -146,22 +146,35 @@ let yaw=0,pitch=0,locked=false;
 renderer.domElement.addEventListener("click",()=>{if(!renderer.xr.isPresenting)renderer.domElement.requestPointerLock?.();});
 document.addEventListener("pointerlockchange",()=>locked=document.pointerLockElement===renderer.domElement);
 document.addEventListener("mousemove",e=>{if(locked){yaw-=e.movementX*.002;pitch=Math.max(-1.1,Math.min(1.1,pitch-e.movementY*.002));}});
-let joy={x:0,y:0},jump=false;
+let joy={x:0,y:0},jump=false,activePadPointer=null;
 const pad=document.querySelector("#mobile"),stick=document.querySelector("#stick");
-let padRect;
 function padMove(e){
-  const r=pad.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2;
-  let dx=e.clientX-cx,dy=e.clientY-cy, len=Math.hypot(dx,dy), max=42;
+  const r=pad.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  let dx=e.clientX-cx,dy=e.clientY-cy;
+  const len=Math.hypot(dx,dy),max=Math.min(r.width,r.height)*0.32;
   if(len>max){dx=dx/len*max;dy=dy/len*max;}
   joy.x=dx/max;joy.y=dy/max;
-  stick.style.transform=`translate(${dx}px,${dy}px)`;
+  stick.style.transform=`translate3d(${dx}px,${dy}px,0)`;
+  e.preventDefault();
 }
-pad.addEventListener("pointerdown",e=>{pad.setPointerCapture(e.pointerId);padMove(e);});
-pad.addEventListener("pointermove",e=>{if(e.buttons)padMove(e);});
-function resetPad(){joy={x:0,y:0};stick.style.transform="";}
-pad.addEventListener("pointerup",resetPad);pad.addEventListener("pointercancel",resetPad);
-document.querySelector("#jump").addEventListener("pointerdown",()=>jump=true);
-document.querySelector("#jump").addEventListener("pointerup",()=>jump=false);
+pad.addEventListener("pointerdown",e=>{
+  e.preventDefault();activePadPointer=e.pointerId;
+  try{pad.setPointerCapture(e.pointerId);}catch(_){}
+  padMove(e);
+});
+pad.addEventListener("pointermove",e=>{if(e.pointerId===activePadPointer)padMove(e);});
+function resetPad(e){
+  if(e&&activePadPointer!==null&&e.pointerId!==activePadPointer)return;
+  activePadPointer=null;joy={x:0,y:0};stick.style.transform="translate3d(0,0,0)";
+}
+pad.addEventListener("pointerup",resetPad);
+pad.addEventListener("pointercancel",resetPad);
+pad.addEventListener("lostpointercapture",resetPad);
+const jumpButton=document.querySelector("#jump");
+jumpButton.addEventListener("pointerdown",e=>{e.preventDefault();jump=true;});
+jumpButton.addEventListener("pointerup",()=>jump=false);
+jumpButton.addEventListener("pointercancel",()=>jump=false);
+jumpButton.addEventListener("lostpointercapture",()=>jump=false);
 
 let velocity=new THREE.Vector3(), grounded=false;
 const clock=new THREE.Clock();
