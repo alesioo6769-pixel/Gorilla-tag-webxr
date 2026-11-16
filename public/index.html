@@ -127,6 +127,33 @@ for(const side of [-1,1]){
 }
 firstPersonBody.add(firstPersonArms);
 camera.add(firstPersonBody);
+
+const mirrorTarget = new THREE.WebGLRenderTarget(512, 512);
+const mirrorCamera = new THREE.PerspectiveCamera(70, 1, 0.1, 180);
+mirrorCamera.layers.enable(1);
+const mirrorFrame = new THREE.Mesh(new THREE.BoxGeometry(3.15, 2.35, .16), mat(0x40352b));
+mirrorFrame.position.set(0, 1.65, -7.5); scene.add(mirrorFrame);
+const mirrorSurface = new THREE.Mesh(new THREE.PlaneGeometry(2.85, 2.05), new THREE.MeshBasicMaterial({map:mirrorTarget.texture}));
+mirrorSurface.position.set(0, 1.68, -7.405); scene.add(mirrorSurface);
+const localMirrorAvatar = makeGorilla(0x76513b);
+localMirrorAvatar.traverse(o => o.layers.set(1));
+scene.add(localMirrorAvatar);
+const mirrorPlaneZ = mirrorSurface.position.z;
+function renderMirror(){
+  const sourcePos = new THREE.Vector3(), sourceDir = new THREE.Vector3();
+  camera.getWorldPosition(sourcePos); camera.getWorldDirection(sourceDir);
+  mirrorCamera.position.set(sourcePos.x, sourcePos.y, 2*mirrorPlaneZ-sourcePos.z);
+  const reflectedTarget = sourcePos.clone().add(sourceDir);
+  reflectedTarget.z = 2*mirrorPlaneZ-reflectedTarget.z;
+  mirrorCamera.up.set(0,1,0); mirrorCamera.lookAt(reflectedTarget);
+  localMirrorAvatar.position.set(camera.position.x, camera.position.y-1.55, camera.position.z);
+  localMirrorAvatar.rotation.y = renderer.xr.isPresenting ? camera.rotation.y : yaw;
+  mirrorSurface.visible = false;
+  const oldTarget = renderer.getRenderTarget();
+  renderer.setRenderTarget(mirrorTarget); renderer.clear(); renderer.render(scene, mirrorCamera);
+  renderer.setRenderTarget(oldTarget); mirrorSurface.visible = true;
+}
+
 const remotes=new Map();
 const socketUrl=(location.protocol==="https:"?"wss://":"ws://")+location.host;
 let ws;
@@ -279,6 +306,7 @@ function animate(now){
   if(camera.position.y<1.55){camera.position.y=1.55;velocity.y=0;landed=true;}
   grounded=landed;
   sendPosition(now);
+  renderMirror();
   renderer.render(scene,camera);
 }
 renderer.setAnimationLoop(animate);
