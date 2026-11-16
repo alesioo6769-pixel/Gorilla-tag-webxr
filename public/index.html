@@ -197,8 +197,10 @@ function animate(now){
     const move=new THREE.Vector3();
     if(keys.KeyW)move.add(forward);if(keys.KeyS)move.sub(forward);
     if(keys.KeyD)move.add(right);if(keys.KeyA)move.sub(right);
-    move.x+=joy.x;move.z+=joy.y;
-    if(move.lengthSq()>0)move.normalize().multiplyScalar(5.2*dt);
+    // Touch joystick axes are camera-relative; up on screen means forward.
+    move.addScaledVector(right,joy.x);
+    move.addScaledVector(forward,-joy.y);
+    if(move.lengthSq()>0)move.normalize().multiplyScalar(5.2);
     velocity.x=move.x;velocity.z=move.z;
     if((keys.Space||jump)&&camera.position.y<=1.57)velocity.y=4.4;
     velocity.y-=9.8*dt;
