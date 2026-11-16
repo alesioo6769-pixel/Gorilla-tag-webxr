@@ -20,10 +20,10 @@
 </head>
 <body>
 <div id="hud">
-  <strong>ü¶ç Gorilla Forest VR</strong><br>
-  <span id="status">Conectando al servidor‚Ä¶</span><br>
+  <strong;ßuÁ‚ùÁ~∫w^~)ﬁu Gorilla Forest VR</strong><br>
+  <span id="status">Conectando al servidor∫w^~)ﬁv</span><br>
   <input id="name" maxlength="18" value="Gorilla" aria-label="Nombre de jugador">
-  <div id="help">M√≥vil: joystick para caminar, arrastra la pantalla para mirar y pulsa SALTAR ¬∑ Quest: pulsa ENTER VR</div>
+  <div id="help">MÛvil: joystick para caminar, arrastra la pantalla para mirar y pulsa SALTAR ∑ Quest: pulsa ENTER VR</div>
 </div>
 <div id="mobile"><div id="stick"></div></div>
 <button id="jump">SALTAR</button>
@@ -58,9 +58,11 @@ ground.rotation.x=-Math.PI/2; ground.position.y=-0.08; ground.receiveShadow=true
 
 const trunkMat=mat(0x68452b), leafMats=[mat(0x2f773e),mat(0x438b45),mat(0x28663b)];
 const rockMat=mat(0x777e78);
+const solidObjects=[]; // Colisiones de troncos, rocas y tocones.
 function tree(x,z,s=1){
   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.22*s,.34*s,3.2*s,7),trunkMat);
   trunk.position.set(x,1.52*s,z); trunk.castShadow=true; trunk.receiveShadow=true; scene.add(trunk);
+  solidObjects.push({x,z,r:.34*s,top:3.12*s,type:"tree"});
   for(let i=0;i<3;i++){
     const crown=new THREE.Mesh(new THREE.IcosahedronGeometry((1.15-i*.12)*s,1),leafMats[i]);
     crown.position.set(x+(i-1)*.18*s,3.2*s+i*.52*s,z); crown.castShadow=true; scene.add(crown);
@@ -72,14 +74,17 @@ for(let i=0;i<90;i++){
 }
 for(let i=0;i<18;i++){
   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(.45+Math.random()*.65,0),rockMat);
-  rock.position.set((Math.random()-.5)*55,.25,(Math.random()-.5)*55);
+  const rx=(Math.random()-.5)*55, rz=(Math.random()-.5)*55, rr=rock.geometry.parameters.radius;
+  rock.position.set(rx,.25,rz);
   rock.rotation.set(Math.random(),Math.random(),Math.random()); rock.castShadow=true; scene.add(rock);
+  solidObjects.push({x:rx,z:rz,r:rr*.78,top:.25+rr*.72,type:"rock"});
 }
 // Stumps and low platforms
 for(let i=0;i<9;i++){
   const x=(i%3-1)*4, z=-5-Math.floor(i/3)*4;
   const stump=new THREE.Mesh(new THREE.CylinderGeometry(.85,.95,1.1,9),trunkMat);
   stump.position.set(x,.48,z); stump.castShadow=true; scene.add(stump);
+  solidObjects.push({x,z,r:.9,top:1.1,type:"stump"});
   const top=new THREE.Mesh(new THREE.CylinderGeometry(.86,.86,.12,9),mat(0x9b7448));
   top.position.set(x,1.06,z); scene.add(top);
 }
@@ -104,7 +109,7 @@ function makeGorilla(color=0x8c6247){
   }
   return group;
 }
-// Cuerpo visible en primera persona, unido a la c√°mara para seguir la mirada.
+// Cuerpo visible en primera persona, unido a la c·mara para seguir la mirada.
 const firstPersonBody = new THREE.Group();
 const bodyShell = new THREE.Mesh(new THREE.SphereGeometry(.34,16,12),localMat);
 bodyShell.scale.set(1,1.22,.72);
@@ -127,8 +132,8 @@ const socketUrl=(location.protocol==="https:"?"wss://":"ws://")+location.host;
 let ws;
 try{
   ws=new WebSocket(socketUrl);
-  ws.onopen=()=>statusEl.textContent="Conectado ¬∑ sala compartida";
-  ws.onclose=()=>statusEl.textContent="Sin conexi√≥n ¬∑ modo local";
+  ws.onopen=()=>statusEl.textContent="Conectado ∑ sala compartida";
+  ws.onclose=()=>statusEl.textContent="Sin conexiÛn ∑ modo local";
   ws.onerror=()=>statusEl.textContent="No se pudo conectar al servidor";
   ws.onmessage=e=>{
     const m=JSON.parse(e.data);
@@ -157,7 +162,7 @@ function sendPosition(now){
   }
 }
 
-// En m√≥vil, desliza sobre el mundo para girar la c√°mara.
+// En mÛvil, desliza sobre el mundo para girar la c·mara.
 let yaw=0,pitch=0,lookPointer=null,lastLookX=0,lastLookY=0;
 renderer.domElement.addEventListener("pointerdown",e=>{
   if(e.pointerType!=="touch" || renderer.xr.isPresenting)return;
@@ -252,8 +257,27 @@ function animate(now){
     camera.position.addScaledVector(velocity,dt);
     if(camera.position.y<1.55){camera.position.y=1.55;velocity.y=0;}
     // En VR, el torso sigue la cabeza y las manos reales siguen los mandos.
-    firstPersonArms.visible=false;
+    firstPersonArms.visible=true;
   }
+  // ColisiÛn circular y superficies superiores: permite subir y quedarse encima.
+  const feetY=camera.position.y-1.55;
+  const previousFeetY=feetY-velocity.y*dt;
+  let landed=false;
+  for(const obj of solidObjects){
+    const dx=camera.position.x-obj.x,dz=camera.position.z-obj.z;
+    const dist=Math.hypot(dx,dz), minDist=obj.r+.28;
+    if(dist<minDist){
+      if(previousFeetY>=obj.top-.18 && feetY<=obj.top+.22 && velocity.y<=0){
+        camera.position.y=obj.top+1.55;velocity.y=0;landed=true;
+      }else if(feetY<obj.top-.12){
+        const push=minDist-dist||.01;
+        const nx=dist>0?dx/dist:1,nz=dist>0?dz/dist:0;
+        camera.position.x+=nx*push;camera.position.z+=nz*push;
+      }
+    }
+  }
+  if(camera.position.y<1.55){camera.position.y=1.55;velocity.y=0;landed=true;}
+  grounded=landed;
   sendPosition(now);
   renderer.render(scene,camera);
 }
