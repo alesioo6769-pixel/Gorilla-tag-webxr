@@ -107,6 +107,13 @@ function makeGorilla(color=0x8c6247){
     const hand=new THREE.Mesh(new THREE.SphereGeometry(.19,10,8),handMat);
     hand.position.set(side*.72,.58,-.13); group.add(hand);
   }
+  const legMat = mat(color);
+  for(const side of [-1,1]){
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.105,.38,4,8), legMat);
+    leg.position.set(side*.18,.48,.015); group.add(leg);
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(.13,10,8), legMat);
+    foot.scale.set(1,.62,1.25); foot.position.set(side*.18,.22,-.055); group.add(foot);
+  }
   return group;
 }
 // Cuerpo visible en primera persona, unido a la cámara para seguir la mirada.
@@ -128,30 +135,38 @@ for(const side of [-1,1]){
 firstPersonBody.add(firstPersonArms);
 camera.add(firstPersonBody);
 
-const mirrorTarget = new THREE.WebGLRenderTarget(512, 512);
-const mirrorCamera = new THREE.PerspectiveCamera(70, 1, 0.1, 180);
+// Espejo fijo de pared: cámara virtual reflejada respecto al plano del espejo.
+const mirrorTarget = new THREE.WebGLRenderTarget(768, 552, { depthBuffer:true, stencilBuffer:false });
+const mirrorCamera = new THREE.PerspectiveCamera(70, 768/552, 0.1, 180);
 mirrorCamera.layers.enable(1);
 const mirrorFrame = new THREE.Mesh(new THREE.BoxGeometry(3.15, 2.35, .16), mat(0x40352b));
 mirrorFrame.position.set(0, 1.65, -7.5); scene.add(mirrorFrame);
-const mirrorSurface = new THREE.Mesh(new THREE.PlaneGeometry(2.85, 2.05), new THREE.MeshBasicMaterial({map:mirrorTarget.texture}));
+const mirrorSurface = new THREE.Mesh(new THREE.PlaneGeometry(2.85, 2.05), new THREE.MeshBasicMaterial({map:mirrorTarget.texture, side:THREE.FrontSide}));
 mirrorSurface.position.set(0, 1.68, -7.405); scene.add(mirrorSurface);
 const localMirrorAvatar = makeGorilla(0x76513b);
 localMirrorAvatar.traverse(o => o.layers.set(1));
 scene.add(localMirrorAvatar);
 const mirrorPlaneZ = mirrorSurface.position.z;
+const mirrorSourcePos = new THREE.Vector3(), mirrorSourceDir = new THREE.Vector3(), mirrorLookTarget = new THREE.Vector3();
 function renderMirror(){
-  const sourcePos = new THREE.Vector3(), sourceDir = new THREE.Vector3();
-  camera.getWorldPosition(sourcePos); camera.getWorldDirection(sourceDir);
-  mirrorCamera.position.set(sourcePos.x, sourcePos.y, 2*mirrorPlaneZ-sourcePos.z);
-  const reflectedTarget = sourcePos.clone().add(sourceDir);
-  reflectedTarget.z = 2*mirrorPlaneZ-reflectedTarget.z;
-  mirrorCamera.up.set(0,1,0); mirrorCamera.lookAt(reflectedTarget);
-  localMirrorAvatar.position.set(camera.position.x, camera.position.y-1.55, camera.position.z);
-  localMirrorAvatar.rotation.y = renderer.xr.isPresenting ? camera.rotation.y : yaw;
+  const sourceCamera = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
+  sourceCamera.getWorldPosition(mirrorSourcePos);
+  sourceCamera.getWorldDirection(mirrorSourceDir);
+  mirrorCamera.position.set(mirrorSourcePos.x, mirrorSourcePos.y, 2*mirrorPlaneZ-mirrorSourcePos.z);
+  mirrorLookTarget.copy(mirrorSourcePos).add(mirrorSourceDir);
+  mirrorLookTarget.z = 2*mirrorPlaneZ-mirrorLookTarget.z;
+  mirrorCamera.up.set(0,1,0);
+  mirrorCamera.lookAt(mirrorLookTarget);
+  localMirrorAvatar.position.set(mirrorSourcePos.x, mirrorSourcePos.y-1.55, mirrorSourcePos.z);
+  localMirrorAvatar.rotation.y = renderer.xr.isPresenting ? sourceCamera.rotation.y : yaw;
+  localMirrorAvatar.updateMatrixWorld(true);
   mirrorSurface.visible = false;
-  const oldTarget = renderer.getRenderTarget();
-  renderer.setRenderTarget(mirrorTarget); renderer.clear(); renderer.render(scene, mirrorCamera);
-  renderer.setRenderTarget(oldTarget); mirrorSurface.visible = true;
+  const previousTarget = renderer.getRenderTarget();
+  renderer.setRenderTarget(mirrorTarget);
+  renderer.clear();
+  renderer.render(scene, mirrorCamera);
+  renderer.setRenderTarget(previousTarget);
+  mirrorSurface.visible = true;
 }
 
 const remotes=new Map();
