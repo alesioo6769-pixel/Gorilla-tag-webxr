@@ -16,18 +16,36 @@
   #jump{display:none;position:fixed;z-index:6;right:24px;bottom:40px;width:92px;height:92px;border-radius:50%;border:2px solid white;background:#245f38cc;color:white;font-weight:bold}
   #error{position:fixed;z-index:10;bottom:10px;left:10px;right:10px;color:#ffd1d1;font-size:12px}
   @media (pointer:coarse){#mobile{display:block}#jump{display:block}#help{max-width:250px}}
+
+  #game-menu{position:fixed;z-index:8;right:12px;top:12px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:62vw}
+  .game-btn{border:1px solid #ffffff66;border-radius:10px;padding:9px 11px;background:#142d20eF;color:#fff;font-weight:700;font-size:12px;touch-action:manipulation}
+  #game-panel{position:fixed;z-index:9;right:12px;top:62px;width:min(310px,calc(100vw - 24px));max-height:65vh;overflow:auto;display:none;background:#102018f2;border:1px solid #ffffff55;border-radius:14px;padding:14px;box-sizing:border-box}
+  #game-panel h3{margin:0 0 10px;font-size:17px} #game-panel p{font-size:12px;opacity:.85}
+  .shop-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 0;border-top:1px solid #ffffff22;font-size:13px}
+  .shop-item button{background:#39794b;color:white;border:0;border-radius:8px;padding:8px;font-weight:700}
+  #coin-hud{position:fixed;z-index:7;left:12px;bottom:12px;background:#102018df;border:1px solid #ffffff44;border-radius:12px;padding:9px 12px;font-weight:800}
+  @media(max-width:520px){#game-menu{top:auto;bottom:168px;right:12px;max-width:65vw} .game-btn{padding:8px;font-size:11px} #game-panel{top:auto;bottom:220px}}
+
 </style>
 </head>
 <body>
 <div id="hud">
   <strong;§uçâç~ºw^~)Þu Gorilla Forest VR</strong><br>
-  <span id="status">Conectando al servidorºw^~)Þv</span><br>
+  <span id="status">Conectando al servidor…</span><br>
   <input id="name" maxlength="18" value="Gorilla" aria-label="Nombre de jugador">
   <div id="help">Móvil: joystick para caminar, arrastra la pantalla para mirar y pulsa SALTAR · Quest: pulsa ENTER VR</div>
 </div>
 <div id="mobile"><div id="stick"></div></div>
 <button id="jump">SALTAR</button>
 <div id="error"></div>
+<div id="game-menu">
+ <button class="game-btn" id="shop-open">🛒 TIENDA</button>
+ <button class="game-btn" id="wardrobe-open">🪞 ESPEJO</button>
+ <button class="game-btn" id="map-open">🌲 MAPAS</button>
+</div>
+<div id="coin-hud">🪙 <span id="coin-count">0</span> monedas</div>
+<section id="game-panel" aria-live="polite"><h3 id="panel-title">Tienda</h3><div id="panel-content"></div><button class="game-btn" id="panel-close">Cerrar</button></section>
+
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/VRButton.js";
@@ -324,8 +342,34 @@ function animate(now){
   renderMirror();
   renderer.render(scene,camera);
 }
-renderer.setAnimationLoop(animate);
+renderer.setAnimationLoop((now,frame)=>{if(!renderer.xr.isPresenting){for(const c of coinMeshes){if(!c.visible)continue;c.rotation.z+=.035;if(camera.position.distanceTo(c.position)<1.05){c.visible=false;gameState.coins+=5;saveGame();}}}if(now-lastCoinReward>60000){lastCoinReward=now;gameState.coins+=3;saveGame();}animate(now);});
 addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+// Sistemas de monedas, tienda, vestuario/espejo y mapas. Se guardan localmente.
+const gameState={coins:Number(localStorage.getItem('gfr-coins')||0),owned:JSON.parse(localStorage.getItem('gfr-owned')||'["default"]'),skin:localStorage.getItem('gfr-skin')||'default',map:localStorage.getItem('gfr-map')||'forest'};
+const coinCount=document.querySelector('#coin-count'), panel=document.querySelector('#game-panel'), panelTitle=document.querySelector('#panel-title'), panelContent=document.querySelector('#panel-content');
+function saveGame(){localStorage.setItem('gfr-coins',String(gameState.coins));localStorage.setItem('gfr-owned',JSON.stringify(gameState.owned));localStorage.setItem('gfr-skin',gameState.skin);localStorage.setItem('gfr-map',gameState.map);coinCount.textContent=gameState.coins;}
+saveGame();
+function openPanel(title,html){panelTitle.textContent=title;panelContent.innerHTML=html;panel.style.display='block';}
+document.querySelector('#panel-close').addEventListener('click',()=>panel.style.display='none');
+const skins={default:{name:'Gorila clásico',color:0x76513b,price:0},moss:{name:'Musgo',color:0x438b45,price:35},ice:{name:'Hielo',color:0x8acde0,price:60},lava:{name:'Lava',color:0xc65a32,price:90},gold:{name:'Dorado',color:0xd9ad32,price:140}};
+function applySkin(){const sk=skins[gameState.skin]||skins.default;localMirrorAvatar.traverse(o=>{if(o.isMesh&&o.material&&o.material.color){o.material.color.setHex(sk.color);}});bodyShell.material.color.setHex(sk.color);firstPersonArms.children.forEach(o=>{if(o.material&&o.material.color)o.material.color.setHex(sk.color);});}
+function renderShop(){openPanel('🛒 Tienda de cosméticos',`<p>Compra apariencias con las monedas que encuentres explorando.</p>`+Object.entries(skins).map(([id,x])=>`<div class="shop-item"><span>${x.name} · ${x.price===0?'Gratis':x.price+' 🪙'}</span><button data-buy="${id}">${gameState.owned.includes(id)?(gameState.skin===id?'Equipado':'Equipar'):'Comprar'}</button></div>`).join(''));panelContent.querySelectorAll('[data-buy]').forEach(btn=>btn.addEventListener('click',()=>{const id=btn.dataset.buy,sk=skins[id];if(!gameState.owned.includes(id)){if(gameState.coins<sk.price){btn.textContent='Faltan monedas';return;}gameState.coins-=sk.price;gameState.owned.push(id);}gameState.skin=id;saveGame();applySkin();renderShop();}));}
+document.querySelector('#shop-open').addEventListener('click',renderShop);
+document.querySelector('#wardrobe-open').addEventListener('click',()=>{openPanel('🪞 Espejo · Vestuario','<p>Prueba tus apariencias. El gorila del espejo cambia al equiparlas.</p>'+Object.entries(skins).filter(([id])=>gameState.owned.includes(id)).map(([id,x])=>`<div class="shop-item"><span>${x.name}</span><button data-wear="${id}">Probar</button></div>`).join(''));panelContent.querySelectorAll('[data-wear]').forEach(btn=>btn.addEventListener('click',()=>{gameState.skin=btn.dataset.wear;saveGame();applySkin();}));});
+const maps={forest:{name:'Bosque',sky:0x9bc9d5,fog:0x9bc9d5,ground:0x527b3c},sunset:{name:'Atardecer',sky:0xe59a70,fog:0xd68a69,ground:0x806044},night:{name:'Noche',sky:0x101a36,fog:0x182344,ground:0x293d35}};
+function setMap(id){const m=maps[id];gameState.map=id;scene.background.setHex(m.sky);scene.fog.color.setHex(m.fog);groundMat.color.setHex(m.ground);saveGame();}
+document.querySelector('#map-open').addEventListener('click',()=>{openPanel('🌲 Seleccionar mapa','<p>Elige el ambiente para explorar.</p>'+Object.entries(maps).map(([id,m])=>`<div class="shop-item"><span>${m.name}</span><button data-map="${id}">${gameState.map===id?'Seleccionado':'Elegir'}</button></div>`).join(''));panelContent.querySelectorAll('[data-map]').forEach(btn=>btn.addEventListener('click',()=>{setMap(btn.dataset.map);document.querySelector('#map-open').textContent='🌲 '+maps[gameState.map].name;panelContent.querySelectorAll('[data-map]').forEach(b=>b.textContent=b.dataset.map===gameState.map?'Seleccionado':'Elegir');}));});
+setMap(gameState.map);applySkin();
+// Monedas físicas en el bosque: acércate para recogerlas.
+const coinMeshes=[];const coinGeo=new THREE.TorusGeometry(.22,.075,8,16);const coinMat=new THREE.MeshStandardMaterial({color:0xffd447,metalness:.65,roughness:.28,emissive:0x4b2d00});
+for(let i=0;i<18;i++){const a=i*2.399,r=4+(i%6)*2.4;const coin=new THREE.Mesh(coinGeo,coinMat);coin.position.set(Math.cos(a)*r,.9,Math.sin(a)*r);coin.rotation.x=Math.PI/2;scene.add(coin);coinMeshes.push(coin);}
+let lastCoinReward=0;// Collectibles and periodic rewards are processed by the existing animation loop.
+
+// Make the full game canvas respond reliably to one-finger look gestures; controls retain their own pointer capture.
+renderer.domElement.style.touchAction='none';
+renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+
 </script>
 </body>
 </html>
